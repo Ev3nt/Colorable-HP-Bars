@@ -73,12 +73,12 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <OutDir>$(SolutionDir)Build\bin\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)Build\obj\$(Configuration)\</IntDir>
-    <TargetExt>.mix</TargetExt>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <OutDir>$(SolutionDir)Build\bin\$(Configuration)\</OutDir>
     <IntDir>$(SolutionDir)Build\obj\$(Configuration)\</IntDir>
-    <TargetExt>.mix</TargetExt>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <OutDir>$(SolutionDir)Build\bin\$(Configuration)\</OutDir>

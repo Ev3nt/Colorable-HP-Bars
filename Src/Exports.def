@@ -1,2 +1,10 @@
 EXPORTS
 	SetForceColor
+	SetUnitHealthBarColor
+	SetUnitHealthBarSize
+	SetUnitExtraBar
+	SetUnitExtraBarFillAmount
+	SetUnitExtraBarColor
+	SetUnitExtraBarAnchors
+	SetUnitExtraBarPriority
+	RemoveUnitExtraBar
