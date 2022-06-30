@@ -2,7 +2,7 @@
 #include <detours.h>
 #include <vector>
 #include "fp_call.h"
-#include <map>
+#include <unordered_map>
 
 #define AttachDetour(pointer, detour) (DetourUpdateThread(GetCurrentThread()), DetourAttach(&(PVOID&)pointer, detour))
 #define DetachDetour(pointer, detour) (DetourUpdateThread(GetCurrentThread()), DetourDetach(&(PVOID&)pointer, detour))
@@ -34,15 +34,14 @@ typedef struct {
 	float BarValue = NULL;
 	UINT BarFillDirection = NULL; // 0 - left, 1 - right
 	UINT BarParentAnchor = NULL; // 0 - left, 1 - end, 2 - right
-	UINT BarPriority = NULL;
+	int BarPriority = -1;
 } CExtraBar;
 
 typedef struct {
 	DWORD HPBarColor = NULL;
 	float HPBarWidth = NULL;
 	float HPBarHeight = NULL;
-	UINT maxPriority = 1;
-	std::map<UINT, CExtraBar> ExtraBars;
+	std::unordered_map<UINT, CExtraBar> ExtraBars;
 } CUnitData;
 
 UINT_PTR gameBase = (UINT_PTR)GetModuleHandle("game.dll");
@@ -53,7 +52,7 @@ DWORD PlayerColor = 0xFFF3FF00;
 DWORD AlliesColor = 0xFF13FF00;
 DWORD EnemiesColor = 0xFFFF0000;
 
-std::map<UINT, CUnitData> UnitsData;
+std::unordered_map<UINT, CUnitData> UnitsData;
 
 auto SMemAlloc = (LPVOID(__stdcall*)(size_t amount, LPCSTR logfilename, int logline, int defaultValue))(GetProcAddress(stormBase, (LPCSTR)401));
 auto SMemDestroy = (BOOL(__cdecl *)())(GetProcAddress(stormBase, (LPCSTR)402));
@@ -69,6 +68,7 @@ auto SetCSimpleFramePriority = (BOOL(__thiscall*)(UINT frame, UINT priority))(ga
 //auto ShowHPBar = (void(__thiscall*)(CPreselectUI * PreselectUI, UINT Unit, BOOL unk))(gameBase + 0x379a30);
 auto StatBarDestructor = (BOOL(__thiscall*)(UINT frame, BOOL flag))(gameBase + 0x35a090);
 auto SetStatBarValue = (void(__thiscall*)(UINT frame, float value))(gameBase + 0x60e430);
+auto ShowStatBar = (BOOL(__thiscall*)(UINT frame))(gameBase + 0x609b50);
 auto HideStatBar = (BOOL(__thiscall*)(UINT frame))(gameBase + 0x609ad0);
 auto UpdateHPBar = (void(__thiscall*)(UINT StatBar, UINT unk))(gameBase + 0x364A50);
 auto UnitDataUpdate = (void(__thiscall*)(UINT Unit))(gameBase + 0x2C74b0);
@@ -87,6 +87,7 @@ auto IsPlayerEnemy = (BOOL(__cdecl*)(HANDLE player1, HANDLE player2))(gameBase +
 bool ValidVersion();
 void __fastcall SetJassStateCustom(BOOL jassState);
 
+BOOL __fastcall ShowStatBarCustom(UINT frame);
 BOOL __fastcall HideStatBarCustom(UINT frame);
 //void __fastcall ShowHPBarCustom(CPreselectUI* PreselectUI, LPVOID, UINT Unit, BOOL unk);
 void __fastcall UpdateHPBarCustom(UINT StatBar, LPVOID, UINT unk);
@@ -138,6 +139,11 @@ extern "C" void __stdcall SetUnitHealthBarSize(UINT unit, float width, float hei
 }
 
 extern "C" UINT __stdcall SetUnitExtraBar(UINT unit, float fillAmount, UINT fillDirection, UINT parentAnchor, DWORD color) {
+	CUnitData& UnitData = UnitsData[unit];
+	if (UnitData.ExtraBars.size() >= 8) {
+		return NULL;
+	}
+	
 	UINT bar = (UINT)SMemAlloc(344, "ColorableArmorStatBar", 4, 0);
 	CExtraBar& extraBar = UnitsData[unit].ExtraBars[bar];
 	extraBar.Bar = bar;
@@ -146,7 +152,6 @@ extern "C" UINT __stdcall SetUnitExtraBar(UINT unit, float fillAmount, UINT fill
 	extraBar.BarFillDirection = fillDirection;
 	extraBar.BarParentAnchor = parentAnchor;
 	extraBar.BarColor = color;
-	extraBar.BarPriority = ++UnitsData[unit].maxPriority;
 
 	return extraBar.Bar;
 }
@@ -188,6 +193,7 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		DetourTransactionBegin();
 
 		//AttachDetour(ShowHPBar, ShowHPBarCustom);
+		AttachDetour(ShowStatBar, ShowStatBarCustom);
 		AttachDetour(HideStatBar, HideStatBarCustom);
 		AttachDetour(UpdateHPBar, UpdateHPBarCustom);
 		AttachDetour(UnitDataUpdate, UnitDataUpdateCustom);
@@ -202,6 +208,7 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		DetourTransactionBegin();
 
 		//DetachDetour(ShowHPBar, ShowHPBarCustom);
+		DetachDetour(ShowStatBar, ShowStatBarCustom);
 		DetachDetour(HideStatBar, HideStatBarCustom);
 		DetachDetour(UpdateHPBar, UpdateHPBarCustom);
 		DetachDetour(UnitDataUpdate, UnitDataUpdateCustom);
@@ -218,12 +225,26 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 
 //---------------------------------------------------
 
+BOOL __fastcall ShowStatBarCustom(UINT frame) {
+	UINT unit = GetUnitByStatBar(frame);
+	if (UnitsData.find(unit) != UnitsData.end()) {
+		auto& extraBars = UnitsData[unit].ExtraBars;
+		for (const auto& pairOfBarData : extraBars) {
+			const CExtraBar& barData = pairOfBarData.second;
+			barData.Bar ? ShowStatBar(barData.Bar) : NULL;
+		}
+	}
+
+	return ShowStatBar(frame);
+}
+
 BOOL __fastcall HideStatBarCustom(UINT frame) {
 	UINT unit = GetUnitByStatBar(frame);
 	if (UnitsData.find(unit) != UnitsData.end()) {
 		auto& extraBars = UnitsData[unit].ExtraBars;
-		for (const auto& barData : extraBars) {
-			barData.second.Bar ? HideStatBar(barData.second.Bar) : NULL;
+		for (const auto& pairOfBarData : extraBars) {
+			const CExtraBar& barData = pairOfBarData.second;
+			barData.Bar ? HideStatBar(barData.Bar) : NULL;
 		}
 	}
 
@@ -269,33 +290,35 @@ void __fastcall UpdateHPBarCustom(UINT StatBar, LPVOID, UINT unk) {
 }
 
 void __fastcall UnitDataUpdateCustom(UINT Unit) {
-	if (UnitsData.find(Unit) != UnitsData.end()) {
-		for (auto& barData : UnitsData[Unit].ExtraBars) {
-			if (barData.second.Bar) {
-				CPreselectUI* preselectUI = GetUnitPreselectUI(Unit);
-				if (preselectUI) {
+	CPreselectUI* preselectUI = GetUnitPreselectUI(Unit);
+	if (preselectUI) {
+		if (UnitsData.find(Unit) != UnitsData.end()) {
+			UINT priority = 1;
+			for (auto& pairOfBarData : UnitsData[Unit].ExtraBars) {
+				CExtraBar& barData = pairOfBarData.second;
+				if (barData.Bar) {
 					UINT statBar = preselectUI->StatBar;
-					float displayValue = barData.second.BarValue > 1.f ? 1.f : barData.second.BarValue;
+					float displayValue = barData.BarValue > 1.f ? 1.f : barData.BarValue;
 					float width = GetFrameWidth(statBar);
 
-					SetFrameWidth(barData.second.Bar, width);
-					SetFrameHeight(barData.second.Bar, GetFrameHeight(statBar));
-					SetStatBarValue(barData.second.Bar, displayValue);
+					SetFrameWidth(barData.Bar, width);
+					SetFrameHeight(barData.Bar, GetFrameHeight(statBar));
+					SetStatBarValue(barData.Bar, displayValue);
 
-					SetSimpleTextureColor(GetSimpleTextureByStatBar(barData.second.Bar), &barData.second.BarColor);
-					((DWORD*)((UINT*)barData.second.Bar)[81])[35] = NULL; // background
+					SetSimpleTextureColor(GetSimpleTextureByStatBar(barData.Bar), &barData.BarColor);
+					((DWORD*)((UINT*)barData.Bar)[81])[35] = NULL; // background
 
-					SetCSimpleFramePriority(barData.second.Bar, barData.second.BarPriority);
+					SetCSimpleFramePriority(barData.Bar, barData.BarPriority >= 0 && barData.BarPriority <= 9 ? barData.BarPriority : ++priority);
 
 					float statBarX = GetCLayoutFrameAbsolutePointX(statBar);
 					float x = statBarX;
 					float y = GetCLayoutFrameAbsolutePointY(statBar);
 					//GetUnitFramePosition(Unit, &x, &y);
 
-					switch (barData.second.BarParentAnchor) {
+					switch (barData.BarParentAnchor) {
 					case 0: // Left
-						if (barData.second.BarFillDirection == 0) { // LeftDirection
-							x -= width * GetStatBarValue(barData.second.Bar);
+						if (barData.BarFillDirection == 0) { // LeftDirection
+							x -= width * GetStatBarValue(barData.Bar);
 						}
 						else {  // RightDirection
 
@@ -303,20 +326,20 @@ void __fastcall UnitDataUpdateCustom(UINT Unit) {
 
 						break;
 					case 1: // Mid
-						if (barData.second.BarFillDirection == 0) { // LeftDirection
-							x += width * (GetStatBarValue(statBar) - GetStatBarValue(barData.second.Bar));
+						if (barData.BarFillDirection == 0) { // LeftDirection
+							x += width * (GetStatBarValue(statBar) - GetStatBarValue(barData.Bar));
 							x = x - statBarX < 0 ? statBarX : x;
 						}
 						else {  // RightDirection
 							x += width * GetStatBarValue(statBar);
-							x = x + width * GetStatBarValue(barData.second.Bar) > statBarX + width ? statBarX + width - width * GetStatBarValue(barData.second.Bar) : x;
+							x = x + width * GetStatBarValue(barData.Bar) > statBarX + width ? statBarX + width - width * GetStatBarValue(barData.Bar) : x;
 
 						}
 
 						break;
 					case 2: // Right
-						if (barData.second.BarFillDirection == 0) { // LeftDirection
-							x += width - width * GetStatBarValue(barData.second.Bar);
+						if (barData.BarFillDirection == 0) { // LeftDirection
+							x += width - width * GetStatBarValue(barData.Bar);
 						}
 						else {  // RightDirection
 							x += width;
@@ -329,8 +352,8 @@ void __fastcall UnitDataUpdateCustom(UINT Unit) {
 
 					//x = x - statBarX < 0 ? statBarX : x;
 
-					SetCLayoutFrameAbsolutePoint(barData.second.Bar, NULL, FRAMEPOINT_TOP, x, y, 1);
-					this_call<BOOL>((*(LPVOID**)barData.second.Bar)[26], barData.second.Bar);
+					SetCLayoutFrameAbsolutePoint(barData.Bar, NULL, FRAMEPOINT_TOP, x, y, 1);
+					//this_call<BOOL>((*(LPVOID**)barData.Bar)[26], barData.Bar);
 				}
 			}
 		}
@@ -341,10 +364,11 @@ void __fastcall UnitDataUpdateCustom(UINT Unit) {
 
 BOOL __fastcall UnitDestructorCustom(UINT Unit, LPVOID, UINT unk1) {
 	if (UnitsData.find(Unit) != UnitsData.end()) {
-		for (auto& barData : UnitsData[Unit].ExtraBars) {
-			if (barData.second.Bar) {
-				StatBarDestructorCustom(barData.second.Bar, NULL, TRUE);
-				barData.second.Bar = NULL;
+		for (auto& pairOfBarData : UnitsData[Unit].ExtraBars) {
+			CExtraBar& barData = pairOfBarData.second;
+			if (barData.Bar) {
+				StatBarDestructorCustom(barData.Bar, NULL, TRUE);
+				barData.Bar = NULL;
 			}
 		}
 
