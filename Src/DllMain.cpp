@@ -193,7 +193,7 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		DetourTransactionBegin();
 
 		//AttachDetour(ShowHPBar, ShowHPBarCustom);
-		AttachDetour(ShowStatBar, ShowStatBarCustom);
+		//AttachDetour(ShowStatBar, ShowStatBarCustom);
 		AttachDetour(HideStatBar, HideStatBarCustom);
 		AttachDetour(UpdateHPBar, UpdateHPBarCustom);
 		AttachDetour(UnitDataUpdate, UnitDataUpdateCustom);
@@ -208,7 +208,7 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		DetourTransactionBegin();
 
 		//DetachDetour(ShowHPBar, ShowHPBarCustom);
-		DetachDetour(ShowStatBar, ShowStatBarCustom);
+		//DetachDetour(ShowStatBar, ShowStatBarCustom);
 		DetachDetour(HideStatBar, HideStatBarCustom);
 		DetachDetour(UpdateHPBar, UpdateHPBarCustom);
 		DetachDetour(UnitDataUpdate, UnitDataUpdateCustom);
@@ -225,18 +225,18 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 
 //---------------------------------------------------
 
-BOOL __fastcall ShowStatBarCustom(UINT frame) {
-	UINT unit = GetUnitByStatBar(frame);
-	if (UnitsData.find(unit) != UnitsData.end()) {
-		auto& extraBars = UnitsData[unit].ExtraBars;
-		for (const auto& pairOfBarData : extraBars) {
-			const CExtraBar& barData = pairOfBarData.second;
-			barData.Bar ? ShowStatBar(barData.Bar) : NULL;
-		}
-	}
-
-	return ShowStatBar(frame);
-}
+//BOOL __fastcall ShowStatBarCustom(UINT frame) {
+//	UINT unit = GetUnitByStatBar(frame);
+//	if (UnitsData.find(unit) != UnitsData.end()) {
+//		auto& extraBars = UnitsData[unit].ExtraBars;
+//		for (const auto& pairOfBarData : extraBars) {
+//			const CExtraBar& barData = pairOfBarData.second;
+//			barData.Bar ? ShowStatBar(barData.Bar) : NULL;
+//		}
+//	}
+//
+//	return ShowStatBar(frame);
+//}
 
 BOOL __fastcall HideStatBarCustom(UINT frame) {
 	UINT unit = GetUnitByStatBar(frame);
@@ -353,6 +353,7 @@ void __fastcall UnitDataUpdateCustom(UINT Unit) {
 					//x = x - statBarX < 0 ? statBarX : x;
 
 					SetCLayoutFrameAbsolutePoint(barData.Bar, NULL, FRAMEPOINT_TOP, x, y, 1);
+					ShowStatBar(barData.Bar);
 					//this_call<BOOL>((*(LPVOID**)barData.Bar)[26], barData.Bar);
 				}
 			}
