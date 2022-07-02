@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include <detours.h>
 #include <vector>
 #include "fp_call.h"
@@ -55,7 +55,7 @@ DWORD EnemiesColor = 0xFFFF0000;
 std::unordered_map<UINT, CUnitData> UnitsData;
 
 auto SMemAlloc = (LPVOID(__stdcall*)(size_t amount, LPCSTR logfilename, int logline, int defaultValue))(GetProcAddress(stormBase, (LPCSTR)401));
-auto SMemDestroy = (BOOL(__cdecl *)())(GetProcAddress(stormBase, (LPCSTR)402));
+auto SMemDestroy = (BOOL(__cdecl*)())(GetProcAddress(stormBase, (LPCSTR)402));
 auto SMemFree = (BOOL(__stdcall*)(LPVOID location, LPCSTR logfilename, int logline, int defaultValue))(GetProcAddress(stormBase, (LPCSTR)403));
 auto SMemGetSize = (size_t(__stdcall*)(LPVOID location, LPCSTR logfilename, int logline))(GetProcAddress(stormBase, (LPCSTR)404));
 auto SMemReAlloc = (LPVOID(__stdcall*)(LPVOID location, size_t amount, LPCSTR logfilename, int logline, int defaultValue))(GetProcAddress(stormBase, (LPCSTR)405));
@@ -71,12 +71,13 @@ auto SetStatBarValue = (void(__thiscall*)(UINT frame, float value))(gameBase + 0
 auto ShowStatBar = (BOOL(__thiscall*)(UINT frame))(gameBase + 0x609b50);
 auto HideStatBar = (BOOL(__thiscall*)(UINT frame))(gameBase + 0x609ad0);
 auto UpdateHPBar = (void(__thiscall*)(UINT StatBar, UINT unk))(gameBase + 0x364A50);
-auto UnitDataUpdate = (void(__thiscall*)(UINT Unit))(gameBase + 0x2C74b0);
+auto DrawUnitHealthBar = (void(__thiscall*)(UINT Unit))(gameBase + 0x2C74b0);
+auto DrawStatBar = (void(__thiscall*)(UINT frame, UINT unit))(gameBase + 0x364a50);
 auto SetJassState = (void(__fastcall*)(BOOL jassState))(gameBase + 0x2ab0e0);
 auto UnitDestructor = (BOOL(__thiscall*)(UINT Unit, UINT unk1))(gameBase + 0x28b670);
 auto DisplayUnitPreselectUI = (BOOL(__thiscall*)(UINT unit, UINT unk1, UINT unk2))(gameBase + 0x2c7460);
 
-auto SetSimpleTextureColor = (BOOL(__thiscall*)(UINT frame, DWORD* defaultColor))(gameBase + 0x60e740);
+auto SetSimpleTextureColor = (BOOL(__thiscall*)(UINT frame, DWORD * defaultColor))(gameBase + 0x60e740);
 auto SetFrameWidth = (BOOL(__thiscall*)(UINT frame, float width))(gameBase + 0x605d90);
 auto SetFrameHeight = (BOOL(__thiscall*)(UINT frame, float height))(gameBase + 0x605db0);
 auto Player = (HANDLE(__cdecl*)(int num))(gameBase + 0x3bbb30);
@@ -87,11 +88,11 @@ auto IsPlayerEnemy = (BOOL(__cdecl*)(HANDLE player1, HANDLE player2))(gameBase +
 bool ValidVersion();
 void __fastcall SetJassStateCustom(BOOL jassState);
 
-BOOL __fastcall ShowStatBarCustom(UINT frame);
-BOOL __fastcall HideStatBarCustom(UINT frame);
 //void __fastcall ShowHPBarCustom(CPreselectUI* PreselectUI, LPVOID, UINT Unit, BOOL unk);
+//BOOL __fastcall ShowStatBarCustom(UINT frame);
+BOOL __fastcall HideStatBarCustom(UINT frame);
 void __fastcall UpdateHPBarCustom(UINT StatBar, LPVOID, UINT unk);
-void __fastcall UnitDataUpdateCustom(UINT Unit);
+void __fastcall DrawUnitHealthBarCustom(UINT Unit);
 BOOL __fastcall UnitDestructorCustom(UINT Unit, LPVOID, UINT unk1);
 BOOL __fastcall StatBarDestructorCustom(UINT frame, LPVOID, BOOL flag);
 
@@ -143,7 +144,7 @@ extern "C" UINT __stdcall SetUnitExtraBar(UINT unit, float fillAmount, UINT fill
 	if (UnitData.ExtraBars.size() >= 8) {
 		return NULL;
 	}
-	
+
 	UINT bar = (UINT)SMemAlloc(344, "ColorableArmorStatBar", 4, 0);
 	CExtraBar& extraBar = UnitsData[unit].ExtraBars[bar];
 	extraBar.Bar = bar;
@@ -196,9 +197,11 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		//AttachDetour(ShowStatBar, ShowStatBarCustom);
 		AttachDetour(HideStatBar, HideStatBarCustom);
 		AttachDetour(UpdateHPBar, UpdateHPBarCustom);
-		AttachDetour(UnitDataUpdate, UnitDataUpdateCustom);
+		AttachDetour(DrawUnitHealthBar, DrawUnitHealthBarCustom);
 		AttachDetour(UnitDestructor, UnitDestructorCustom);
 		AttachDetour(StatBarDestructor, StatBarDestructorCustom);
+
+		// Unload library
 		AttachDetour(SetJassState, SetJassStateCustom);
 
 		DetourTransactionCommit();
@@ -211,9 +214,11 @@ BOOL APIENTRY DllMain(HMODULE module, UINT reason, LPVOID reserved) {
 		//DetachDetour(ShowStatBar, ShowStatBarCustom);
 		DetachDetour(HideStatBar, HideStatBarCustom);
 		DetachDetour(UpdateHPBar, UpdateHPBarCustom);
-		DetachDetour(UnitDataUpdate, UnitDataUpdateCustom);
+		DetachDetour(DrawUnitHealthBar, DrawUnitHealthBarCustom);
 		DetachDetour(UnitDestructor, UnitDestructorCustom);
 		DetachDetour(StatBarDestructor, StatBarDestructorCustom);
+
+		// Unload library
 		DetachDetour(SetJassState, SetJassStateCustom);
 
 		DetourTransactionCommit();
@@ -244,6 +249,7 @@ BOOL __fastcall HideStatBarCustom(UINT frame) {
 		auto& extraBars = UnitsData[unit].ExtraBars;
 		for (const auto& pairOfBarData : extraBars) {
 			const CExtraBar& barData = pairOfBarData.second;
+
 			barData.Bar ? HideStatBar(barData.Bar) : NULL;
 		}
 	}
@@ -255,112 +261,134 @@ BOOL __fastcall HideStatBarCustom(UINT frame) {
 //	ShowHPBar(PreselectUI, Unit, unk);
 //}
 
-void __fastcall UpdateHPBarCustom(UINT StatBar, LPVOID, UINT unk) {
-	UpdateHPBar(StatBar, unk);
+// HP Bars Customization
+void CustomizeHPBars(UINT StatBar) {
+	CPreselectUI* preselectUI = GetUnitPreselectUI(GetUnitByStatBar(StatBar));
 
-	if (!((UINT*)StatBar)[27]) {
-		UINT SimpleTexture = GetSimpleTextureByStatBar(StatBar);
-		if (SimpleTexture) {
-			UINT unit = GetUnitBySimpleTexture(SimpleTexture);
-			if (unit) {
-				SetFrameHeight(StatBar, 0.004f); // Default
+	if (!preselectUI || preselectUI->StatBar != StatBar) {
+		return;
+	}
 
-				int playerOwnerNum = GetUnitOwnerNumber(unit);
-				if (playerOwnerNum >= 0 && playerOwnerNum <= 16) {
-					HANDLE localPlayer = GetLocalPlayer();
-					HANDLE ownerPlayer = Player(playerOwnerNum);
+	UINT SimpleTexture = GetSimpleTextureByStatBar(StatBar);
+	if (!SimpleTexture) {
+		return;
+	}
 
-					DWORD color = NULL;
-					if (localPlayer == ownerPlayer) color = PlayerColor;
-					else if (IsPlayerAlly(localPlayer, ownerPlayer)) color = AlliesColor;
-					else if (IsPlayerEnemy(localPlayer, ownerPlayer)) color = EnemiesColor;
+	UINT unit = GetUnitBySimpleTexture(SimpleTexture);
+	if (unit) {
+		SetFrameHeight(StatBar, 0.004f); // Default
 
-					SetSimpleTextureColor(SimpleTexture, &color);
-				}
-				
-				if (UnitsData.find(unit) != UnitsData.end()) {
-					CUnitData& data = UnitsData[unit];
-					data.HPBarColor ? SetSimpleTextureColor(SimpleTexture, &data.HPBarColor) : NULL;
-					data.HPBarWidth ? SetFrameWidth(StatBar, data.HPBarWidth) : NULL;
-					data.HPBarHeight ? SetFrameHeight(StatBar, data.HPBarHeight) : NULL;
-				}
-			}
+		int playerOwnerNum = GetUnitOwnerNumber(unit);
+		if (playerOwnerNum >= 0 && playerOwnerNum <= 16) {
+			HANDLE localPlayer = GetLocalPlayer();
+			HANDLE ownerPlayer = Player(playerOwnerNum);
+
+			DWORD color = NULL;
+			if (localPlayer == ownerPlayer) color = PlayerColor;
+			else if (IsPlayerAlly(localPlayer, ownerPlayer)) color = AlliesColor;
+			else if (IsPlayerEnemy(localPlayer, ownerPlayer)) color = EnemiesColor;
+
+			SetSimpleTextureColor(SimpleTexture, &color);
+		}
+
+		if (UnitsData.find(unit) != UnitsData.end()) {
+			CUnitData& data = UnitsData[unit];
+			data.HPBarColor ? SetSimpleTextureColor(SimpleTexture, &data.HPBarColor) : NULL;
+			data.HPBarWidth ? SetFrameWidth(StatBar, data.HPBarWidth) : NULL;
+			data.HPBarHeight ? SetFrameHeight(StatBar, data.HPBarHeight) : NULL;
 		}
 	}
 }
 
-void __fastcall UnitDataUpdateCustom(UINT Unit) {
-	CPreselectUI* preselectUI = GetUnitPreselectUI(Unit);
-	if (preselectUI) {
-		if (UnitsData.find(Unit) != UnitsData.end()) {
-			UINT priority = 1;
-			for (auto& pairOfBarData : UnitsData[Unit].ExtraBars) {
-				CExtraBar& barData = pairOfBarData.second;
-				if (barData.Bar) {
-					UINT statBar = preselectUI->StatBar;
-					float displayValue = barData.BarValue > 1.f ? 1.f : barData.BarValue;
-					float width = GetFrameWidth(statBar);
+void __fastcall UpdateHPBarCustom(UINT StatBar, LPVOID, UINT unk) {
+	UpdateHPBar(StatBar, unk);
+	CustomizeHPBars(StatBar);
+}
 
-					SetFrameWidth(barData.Bar, width);
-					SetFrameHeight(barData.Bar, GetFrameHeight(statBar));
-					SetStatBarValue(barData.Bar, displayValue);
-
-					SetSimpleTextureColor(GetSimpleTextureByStatBar(barData.Bar), &barData.BarColor);
-					((DWORD*)((UINT*)barData.Bar)[81])[35] = NULL; // background
-
-					SetCSimpleFramePriority(barData.Bar, barData.BarPriority >= 0 && barData.BarPriority <= 9 ? barData.BarPriority : ++priority);
-
-					float statBarX = GetCLayoutFrameAbsolutePointX(statBar);
-					float x = statBarX;
-					float y = GetCLayoutFrameAbsolutePointY(statBar);
-					//GetUnitFramePosition(Unit, &x, &y);
-
-					switch (barData.BarParentAnchor) {
-					case 0: // Left
-						if (barData.BarFillDirection == 0) { // LeftDirection
-							x -= width * GetStatBarValue(barData.Bar);
-						}
-						else {  // RightDirection
-
-						}
-
-						break;
-					case 1: // Mid
-						if (barData.BarFillDirection == 0) { // LeftDirection
-							x += width * (GetStatBarValue(statBar) - GetStatBarValue(barData.Bar));
-							x = x - statBarX < 0 ? statBarX : x;
-						}
-						else {  // RightDirection
-							x += width * GetStatBarValue(statBar);
-							x = x + width * GetStatBarValue(barData.Bar) > statBarX + width ? statBarX + width - width * GetStatBarValue(barData.Bar) : x;
-
-						}
-
-						break;
-					case 2: // Right
-						if (barData.BarFillDirection == 0) { // LeftDirection
-							x += width - width * GetStatBarValue(barData.Bar);
-						}
-						else {  // RightDirection
-							x += width;
-						}
-
-						break;
-					}
-
-					//x += width * (GetStatBarValue(statBar) - GetStatBarValue(data.ArmorBar));
-
-					//x = x - statBarX < 0 ? statBarX : x;
-
-					SetCLayoutFrameAbsolutePoint(barData.Bar, NULL, FRAMEPOINT_TOP, x, y, 1);
-					ShowStatBar(barData.Bar);
-					//this_call<BOOL>((*(LPVOID**)barData.Bar)[26], barData.Bar);
-				}
-			}
-		}
+void DrawUnitExtraBars(UINT unit) {
+	CPreselectUI* preselectUI = GetUnitPreselectUI(unit);
+	if (!preselectUI) {
+		return;
 	}
 
-	UnitDataUpdate(Unit);
+	if (UnitsData.find(unit) != UnitsData.end()) {
+		UINT priority = 1;
+		for (auto& pairOfBarData : UnitsData[unit].ExtraBars) {
+			CExtraBar& barData = pairOfBarData.second;
+			if (!barData.Bar) {
+				continue;
+			}
+
+			UINT statBar = preselectUI->StatBar;
+			float displayValue = barData.BarValue > 1.f ? 1.f : barData.BarValue;
+			float width = GetFrameWidth(statBar);
+
+			SetFrameWidth(barData.Bar, width);
+			SetFrameHeight(barData.Bar, GetFrameHeight(statBar));
+			SetStatBarValue(barData.Bar, displayValue);
+
+			SetSimpleTextureColor(GetSimpleTextureByStatBar(barData.Bar), &barData.BarColor);
+			((DWORD*)((UINT*)barData.Bar)[81])[35] = NULL; // background color
+
+			SetCSimpleFramePriority(barData.Bar, barData.BarPriority >= 0 && barData.BarPriority <= 9 ? barData.BarPriority : ++priority);
+
+			float statBarX = GetCLayoutFrameAbsolutePointX(statBar);
+			float x = statBarX;
+			float y = GetCLayoutFrameAbsolutePointY(statBar);
+
+			//GetUnitFramePosition(Unit, &x, &y);
+
+			switch (barData.BarParentAnchor) {
+			case 0: // Left
+				if (barData.BarFillDirection == 0) { // LeftDirection
+					x -= width * GetStatBarValue(barData.Bar);
+				}
+				else {  // RightDirection
+
+				}
+
+				break;
+			case 1: // Mid
+				if (barData.BarFillDirection == 0) { // LeftDirection
+					x += width * (GetStatBarValue(statBar) - GetStatBarValue(barData.Bar));
+					x = x - statBarX < 0 ? statBarX : x;
+				}
+				else {  // RightDirection
+					x += width * GetStatBarValue(statBar);
+					x = x + width * GetStatBarValue(barData.Bar) > statBarX + width ? statBarX + width - width * GetStatBarValue(barData.Bar) : x;
+
+				}
+
+				break;
+			case 2: // Right
+				if (barData.BarFillDirection == 0) { // LeftDirection
+					x += width - width * GetStatBarValue(barData.Bar);
+				}
+				else {  // RightDirection
+					x += width;
+				}
+
+				break;
+			}
+
+			SetCLayoutFrameAbsolutePoint(barData.Bar, NULL, FRAMEPOINT_TOP, x, y, 1);
+			((BOOL*)statBar)[36] && ((BOOL*)statBar)[37] ? ShowStatBar(barData.Bar) : HideStatBar(barData.Bar);
+		}
+	}
+}
+
+void __fastcall DrawUnitHealthBarCustom(UINT Unit) {
+	DrawUnitHealthBar(Unit);
+	DrawUnitExtraBars(Unit);
+}
+
+BOOL __fastcall StatBarDestructorCustom(UINT frame, LPVOID, BOOL flag) {
+	for (auto& unitData : UnitsData) {
+		auto& extraBars = unitData.second.ExtraBars;
+		extraBars.erase(frame);
+	}
+
+	return StatBarDestructor(frame, flag);
 }
 
 BOOL __fastcall UnitDestructorCustom(UINT Unit, LPVOID, UINT unk1) {
@@ -375,19 +403,8 @@ BOOL __fastcall UnitDestructorCustom(UINT Unit, LPVOID, UINT unk1) {
 
 		UnitsData.erase(Unit);
 	}
-	//StatBarDestructor
 
 	return UnitDestructor(Unit, unk1);
-}
-
-BOOL __fastcall StatBarDestructorCustom(UINT frame, LPVOID, BOOL flag) {
-	for (auto& unitData : UnitsData) {
-		auto& extraBars = unitData.second.ExtraBars;
-		extraBars[frame].Bar = NULL;
-		extraBars.erase(frame);
-	}
-
-	return StatBarDestructor(frame, flag);
 }
 
 void __fastcall SetJassStateCustom(BOOL jassState) {
