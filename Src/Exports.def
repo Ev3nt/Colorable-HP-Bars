@@ -8,3 +8,4 @@ EXPORTS
 	SetUnitExtraBarAnchors
 	SetUnitExtraBarPriority
 	RemoveUnitExtraBar
+	SetUnitExtraBarYTransform

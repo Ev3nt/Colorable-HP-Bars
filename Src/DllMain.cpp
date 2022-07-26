@@ -28,21 +28,23 @@ typedef struct {
 	UINT unk3; // reserved
 } CPreselectUI, * PCPreselectUI;
 
-typedef struct {
+struct CExtraBar {
 	UINT Bar = NULL;
 	DWORD BarColor = NULL;
 	float BarValue = NULL;
+	float BarHeight = 1;
+	float BarOffsetY = NULL;
 	UINT BarFillDirection = NULL; // 0 - left, 1 - right
 	UINT BarParentAnchor = NULL; // 0 - left, 1 - end, 2 - right
 	int BarPriority = -1;
-} CExtraBar;
+};
 
-typedef struct {
+struct CUnitData {
 	DWORD HPBarColor = NULL;
 	float HPBarWidth = NULL;
 	float HPBarHeight = NULL;
 	std::unordered_map<UINT, CExtraBar> ExtraBars;
-} CUnitData;
+};
 
 UINT_PTR gameBase = (UINT_PTR)GetModuleHandle("game.dll");
 HMODULE stormBase = GetModuleHandle("storm.dll");
@@ -176,6 +178,10 @@ extern "C" void __stdcall SetUnitExtraBarPriority(UINT unit, UINT bar, UINT prio
 
 extern "C" void __stdcall RemoveUnitExtraBar(UINT unit, UINT bar) {
 	UnitsData[unit].ExtraBars[bar].Bar ? StatBarDestructorCustom(UnitsData[unit].ExtraBars[bar].Bar, NULL, TRUE) : NULL;
+}
+
+extern "C" void __stdcall SetUnitExtraBarYTransform(UINT unit, UINT bar, float offset, float scale) {
+	UnitsData[unit].ExtraBars[bar].Bar ? UnitsData[unit].ExtraBars[bar].BarOffsetY = offset, UnitsData[unit].ExtraBars[bar].BarHeight = scale : NULL;
 }
 
 //---------------------------------------------------
@@ -324,7 +330,7 @@ void DrawUnitExtraBars(UINT unit) {
 			float width = GetFrameWidth(statBar);
 
 			SetFrameWidth(barData.Bar, width);
-			SetFrameHeight(barData.Bar, GetFrameHeight(statBar));
+			SetFrameHeight(barData.Bar, GetFrameHeight(statBar) * barData.BarHeight);
 			SetStatBarValue(barData.Bar, displayValue);
 
 			SetSimpleTextureColor(GetSimpleTextureByStatBar(barData.Bar), &barData.BarColor);
@@ -334,7 +340,7 @@ void DrawUnitExtraBars(UINT unit) {
 
 			float statBarX = GetCLayoutFrameAbsolutePointX(statBar);
 			float x = statBarX;
-			float y = GetCLayoutFrameAbsolutePointY(statBar);
+			float y = GetCLayoutFrameAbsolutePointY(statBar) + barData.BarOffsetY;
 
 			//GetUnitFramePosition(Unit, &x, &y);
 
